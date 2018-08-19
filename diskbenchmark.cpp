@@ -92,8 +92,7 @@ void usage(const char* prog)
     cout << endl;
 
     cout << "size: " << endl;
-    cout << "    default to 512MB in write and write_read command" << endl;
-    cout << "    default to [path] file size in read command" << endl;
+    cout << "    default to 512MB" << endl;
     cout << "    support unit: K, M, G" << endl;
     cout << endl;
 }
