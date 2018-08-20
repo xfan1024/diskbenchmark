@@ -88,11 +88,11 @@ void usage(const char* prog)
     cout << "command: " << endl;
     cout << "    w, write           test write speed, path must not exists" << endl;
     cout << "    r, read            test read speed, path must exists" << endl;
-    cout << "    wb, write_read     test write and read speed, path must not exists" << endl;
+    cout << "    wr, write_read     test write and read speed, path must not exists" << endl;
     cout << endl;
 
     cout << "size: " << endl;
-    cout << "    default to 512MB" << endl;
+    cout << "    default to 512M" << endl;
     cout << "    support unit: K, M, G" << endl;
     cout << endl;
 }
