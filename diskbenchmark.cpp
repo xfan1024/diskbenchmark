@@ -28,24 +28,46 @@
 #include <string>
 #include <iomanip>
 #include <chrono>
+#include <vector>
 #include <stdint.h>
 #include <assert.h>
-
-// #define CPP17
-
+#include <string.h> // for strcmp
 
 using namespace std;
 
-#ifdef CPP17
-#include <filesystem>
-namespace fs = std::filesystem;
+#ifndef USING_STD_FS
+#define USING_STD_FS 0
 #endif
 
+#ifndef USING_BOOST_FS
+#define USING_BOOST_FS 0
+#endif
+
+constexpr unsigned int UNIT_K = 1024;
+constexpr unsigned int UNIT_M = 1024*1024;
+constexpr unsigned int UNIT_G = 1024*1024*1024;
+
+
+#if USING_STD_FS
+// need c++17 support
+#include <filesystem>
+namespace fs = std::filesystem;
+#define USING_FS 1
+#elif USING_BOOST_FS
+#include <boost/filesystem.hpp>
+namespace fs = boost::filesystem;
+#define USING_FS 1
+#else
+#define USING_FS 0
+#endif
+
+bool opt_delete = true;
+bool opt_check_exists = true;
 bool test_write = false;
 bool test_read = false;
 bool test_path_created = false;
 string test_path;
-uint64_t test_size = 512*1024*1024;
+uint64_t test_size = 512*UNIT_M;
 
 uint8_t dummy_data[16*1024] = 
 {
@@ -125,14 +147,14 @@ string dtos(double number, int precision)
 string strsize(uint64_t size)
 {
     string res;
-    if (size < 10000llu) {
+    if (size < UNIT_K) {
         return to_string(size) + "B";
-    } else if (size < 10000llu*1024) {
-        res = dtos(size / double(1024), 2) + "KB";
-    } else if (size < 10000llu*1024*1024) {
-        res = dtos(size / double(1024*1024), 2) + "MB";
+    } else if (size < UNIT_M) {
+        res = dtos(size / double(UNIT_K), 2) + "KB";
+    } else if (size < UNIT_G) {
+        res = dtos(size / double(UNIT_M), 2) + "MB";
     } else {
-        res = dtos(size / double(1024*1024*1024), 2) + "GB";
+        res = dtos(size / double(UNIT_G), 2) + "GB";
     }
     return res + "(" + to_string(size) + ")";
 }
@@ -140,20 +162,47 @@ string strsize(uint64_t size)
 string strspeed(double speed)
 {
     string res;
-    if (speed < 10000llu) {
+    if (speed < UNIT_K) {
         return to_string(speed) + "B/s";
-    } else if (speed < 10000llu*1024) {
-        return dtos(speed / double(1024), 2) + "KB/s";
-    } else if (speed < 10000llu*1024*1024) {
-        return dtos(speed / double(1024*1024), 2) + "MB/s";
+    } else if (speed < UNIT_M) {
+        return dtos(speed / double(UNIT_K), 2) + "KB/s";
+    } else if (speed < UNIT_G) {
+        return dtos(speed / double(UNIT_M), 2) + "MB/s";
     } else {
-        return dtos(speed / double(1024*1024*1024), 2) + "GB/s";
+        return dtos(speed / double(UNIT_G), 2) + "GB/s";
     }
 }
 
 bool parse_args(int argc, char* argv[])
 {
+    const int argn_min = 3;
+    const int argn_max = 4;
 
+    int argn = 0;
+    vector<char*> argv_vec;
+    argv_vec.reserve(argn_max);
+    for (int i = 0; i < argc; i++) {
+        char * cmd = argv[i];
+        if (cmd[0] == '-') {
+            /* option */
+            if (strcmp(cmd, "--no-delete") == 0) {
+                opt_delete = false;
+            } else if (strcmp(cmd, "--no-check-exists") == 0) {
+                opt_check_exists = false;
+            } else {
+                cout << "error: unknown option " << cmd << endl;
+                return false;
+            }
+        } else {
+            if (argv_vec.size() > argn_max) {
+                usage(argv[0]);
+                return false;
+            }
+            argv_vec.emplace_back(argv[i]);
+        }
+    }
+    argc = argv_vec.size();
+    argv = argv_vec.data();
     if (argc != 3 && argc != 4) {
         usage(argv[0]);
         return false;
@@ -193,11 +242,11 @@ bool parse_args(int argc, char* argv[])
                 if (unit == "" || unit == "B") {
                     unit_base = 1;
                 } else if (unit == "K" || unit == "kB") {
-                    unit_base = 1024;
+                    unit_base = UNIT_K;
                 } else if (unit == "M" || unit == "MB") {
-                    unit_base = 1024*1024;
+                    unit_base = UNIT_M;
                 } else if (unit == "G" || unit == "GB") {
-                    unit_base = 1024*1024*1024;
+                    unit_base = UNIT_G;
                 } else {
                     cout << "error: unsupport unit: " << unit << endl;
                     return false;
@@ -215,15 +264,14 @@ bool parse_args(int argc, char* argv[])
     return true;
 }
 
-#ifdef CPP17
+#if USING_FS
 bool file_exists(const string& s) {
-    return true;
+    return fs::exists(fs::path(s));
 }
 
 bool file_delete(const string& s) {
-    return false;
+    return fs::remove(fs::path(s));
 }
-
 #else
 bool file_exists(const string& s)
 {
@@ -272,8 +320,8 @@ ostream::pos_type tellp(ostream &s)
 bool test_write_process()
 {
     bool res = true;
-
-    if (file_exists(test_path)) {
+    bool exists = file_exists(test_path);
+    if (opt_check_exists && exists) {
         cout << "error: " << test_path << " is exists" << endl;
         return false;
     }
@@ -304,7 +352,7 @@ bool test_write_process()
     }
 
     auto elapse_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
-    auto endpos = tellp(file);
+    auto endpos = file.fail() ? tellp(file) : (fstream::pos_type)test_size;
     cout << "write " << strsize(endpos) << " use " << elapse_ms << "ms" << endl;
     if (elapse_ms) {
         cout << "write speed: " << strspeed(endpos / (elapse_ms / 1000.0)) << endl;
@@ -329,7 +377,7 @@ bool test_read_process()
     uint64_t remain = test_size;
     while (remain) {
         streamsize bs = (streamsize)min(remain, (uint64_t)sizeof(readbuffer));
-        file.read(readbuffer, sizeof(readbuffer));
+        file.read(readbuffer, bs);
         if (file.eof()) {
             break;
         } 
@@ -342,7 +390,7 @@ bool test_read_process()
     }
 
     auto elapse_ms = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
-    auto endpos = tellg(file);
+    auto endpos = file.fail() ? tellg(file) : (fstream::pos_type)test_size;
     if (file.eof()) {
         assert(endpos >= 0 && (uint64_t)endpos < test_size);
         cout << "warning: file size is " << strsize(endpos) << ", less than " << strsize(test_size) << endl;
@@ -374,7 +422,7 @@ int main(int argc, char *argv[])
 {
     if (parse_args(argc, argv)) {
         work();
-        if (test_write && test_path_created) {
+        if (test_path_created && opt_delete) {
             if (!file_delete(test_path)) {
                 cout << "error: delete " << test_path << " failed" << endl;
             }
