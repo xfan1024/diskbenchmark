@@ -81,8 +81,8 @@ void dummy_init(void)
 
 void usage(const char* prog)
 {
-    cout << "Usage: << endl;" << endl;
-    cout << prog << " <path> <command> [size]" << endl ;
+    cout << "usage: " << endl;
+    cout << "    " << prog << " <path> <command> [size]" << endl ;
     cout << endl;
 
     cout << "command: " << endl;
